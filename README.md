@@ -44,6 +44,8 @@ Here are some specific requirements and other important notes: 
 
 Alice's chat window:
 
+<img width="767" alt="list_command" src="https://user-images.githubusercontent.com/45084203/140617351-121e4155-a5dd-4dd9-9969-f7593e907cbe.png">
+
 - Your server now keeps track of a "follow list" for each online user.  This is a list of all of the terms the user is following, which can include user names as well.  (So user alice can follow the term @bob to receive every message sent by user bob, for example.). You can assume that each followed term is a single word, but you can handle more complex phrases if you like.  Only messages that contain followed terms are delivered to users; messages are not broadcast everywhere.  When a client sends a message to the server, the server scans the follow list for each online user to determine which user(s) will be forwarded a copy of the message.  The server simply scans each word of a message looking for follow terms, trailing punctuation still results in a match, but otherwise subwords do not count.  For example, suppose user alice is following the term "apple".  A message like "Would you like an apple?" would be forwarded to alice, but a message like "Do you want a pineapple?" would not.
 - By default, each user follows themselves.  (So user alice follows @alice, user bob follows @bob, etc.). That way, each user will receive messages containing direct mentions of them.  
 - There is now also a special reserved username:  "all".  Each user also by default follows @all, so any message containing @all is effectively broadcast to all users.  Users cannot choose to register as the "all" user; attempts to do so should result in an invalid registration response form the server.
@@ -51,17 +53,27 @@ Alice's chat window:
 
 Alice's chat window:
 
+<img width="767" alt="follow_alice" src="https://user-images.githubusercontent.com/45084203/140617370-70d9d609-41c2-44b2-84ab-82f070fee271.png">
+
 Bob's chat window:
+
+<img width="767" alt="follow_bob" src="https://user-images.githubusercontent.com/45084203/140617380-1a89a95c-a312-4694-84a8-78256a9bbade.png">
 
 - A new "!exit" command must also be supported.  When entered at a client's prompt, the client will be disconnected from the server.  For example, consider Alice's chat window below:
 
 Alice's chat window:
 
+<img width="767" alt="exit_command" src="https://user-images.githubusercontent.com/45084203/140617428-4541d4b2-c5bd-4c9e-b535-6f906e900ec0.png">
+
 - The last command is "!attach", or to be more precise "!attach filename terms".  This will send the file named "filename" to users following the given terms or the user sending the message.  This will involve reading the file chunk-by-chunk and sending each chunk to the appropriate recipients until the file is entirely sent.  To tell how much data to send and to receive, you will need to determine the size of the file and communicate that size in sending things.  (Much like the Content-Length header field of HTTP.). Any errors in the process (such as if "filename" does not exist) must be reported to the user.  On receipt of the file, the receiving clients will save it under the same name as what was given to the "!attach" command.  (This might mean you'll need to have your clients run from different directories, or else they could start clobbering files quite readily.)  For example, here is user alice sending a file to user bob:
 
 Alice's chat window:
 
+<img width="767" alt="attach_alice" src="https://user-images.githubusercontent.com/45084203/140617440-a72e419d-3883-4add-9ea6-95f772fd566b.png">
+
 Bob's chat window:
+
+<img width="751" alt="attach_bob" src="https://user-images.githubusercontent.com/45084203/140617441-883f7fbc-f18f-43e0-acc2-dd468ccdef2a.png">
 
 - It is up to you to determine the flow of messages to implement the above commands and extensions to your chat application.  For example, when I implemented this myself, I kept the client simple and somewhat dumb.  It did absolutely no processing of commands itself, simply passing the text of the commands to the server and the server did all of the work.  Even "!attach" commands were driven by the server; the text of this command was sent to the server and the server issued the client a separate request for the file in question.  You can take a different approach however; as long as you deliver the required functionality, that's the main thing.
 
