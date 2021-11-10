@@ -18,12 +18,15 @@ follow_list = {}
 
 user_count = 0;
 
+
 # Signal handler for graceful exiting.  We let clients know in the process so they can disconnect too.
 
 def signal_handler(sig, frame):
     print('Interrupt received, shutting down ...')
     message = 'DISCONNECT CHAT/1.0\n'
     for reg in client_list:
+        # Empty user's follow list on exit
+        follow_list[reg[0]] = [""]
         reg[1].send(message.encode())
     sys.exit(0)
 
@@ -68,12 +71,40 @@ def client_search_by_socket(sock):
 def client_add(user, conn):
     registration = (user, conn)
     client_list.append(registration)
-    follow_list[user] = [user]
+    insert = f'@{user}'
+    follow_list[user] = [insert]
 
-# Create follow list
 
-def append_follow_list(user, term):
-    follow_list[user].append(term)
+# Append term to follow list
+def append_follow_list(user, term, sock):
+    # if term starts with @ it could be a user
+    if term.startswith('@', 0, 1):
+        newTerm = term.lstrip("@")
+        # if it matches
+        if client_search(newTerm):
+            follow_list[user].append(term)
+            message = f'Now following {term}\n'
+            sock.send(message.encode())
+        # does not match, send message and dont add term
+        else:
+            message = "User does not exist and cannot be followed\n"
+            sock.send(message.encode())
+    # term does not start with @, so add regardless
+    else:
+        follow_list[user].append(term)
+        message = f'Now following {term}\n'
+        sock.send(message.encode())
+
+
+# Remove term from follow list
+def pop_follow_list(user, term, sock):
+    if term in follow_list[user]:
+        follow_list[user].remove(term)
+        message = f'No longer following {term}\n'
+        sock.send(message.encode())
+    else:
+        message = "Term does not exist and cannot be unfollowed\n"
+        sock.send(message.encode())
 
 
 # Remove a client when disconnected.
@@ -81,8 +112,11 @@ def append_follow_list(user, term):
 def client_remove(user):
     for reg in client_list:
         if reg[0] == user:
+            # Empty user's follow list on remove
+            follow_list[reg[0]] = [""]
             client_list.remove(reg)
             break
+
 
 # return names of clients
 def client_name():
@@ -93,10 +127,24 @@ def client_name():
     return message
 
 
+# returns true if message contains a term that is followed
+def followedMessage(message, userFollowList):
+    message_parts = message.lower().strip("\n").split(" ")
+    punctuation = "!@#$%^&*(){}[]_-+=~`:;'<>.,/?"
+    for i in message_parts:
+        print(i)
+        i = i.rstrip(punctuation)
+        print(i)
+        if i in userFollowList or i == "@all":
+            return True
+
+
 # Function to read messages from clients.
 
 def read_message(sock, mask):
     message = get_line_from_socket(sock)
+    user = client_search_by_socket(sock)
+    atUser = f'@{user}'
 
     # Does this indicate a closed connection?
 
@@ -108,17 +156,17 @@ def read_message(sock, mask):
     # Receive the message.  
 
     else:
-        user = client_search_by_socket(sock)
         print(f'Received message from user {user}:  ' + message)
         words = message.split(' ')
         print(words)
+
         if words[1].startswith('!', 0, 1):
+
             # List
             if words[1] == '!list':
-                print("List")
-                message = client_name()
-                # sock.send(message.encode())
-                print(message)
+                message = client_name() + '\n'
+                sock.send(message.encode())
+
             # Exit
             if words[1] == '!exit':
                 print('Disconnecting user ' + user)
@@ -127,20 +175,38 @@ def read_message(sock, mask):
                 client_remove(user)
                 sel.unregister(sock)
                 sock.close()
+
             # Follow command
             elif words[1] == "!follow?":
-                print("follow?")
-                print(follow_list[user])
-                name = "list_%s" % user
-                print(name)
+                user_list = []
+                for item in follow_list[user]:
+                    user_list.append(item)
+                message = (', '.join(user_list)) + '\n'
+                sock.send(message.encode())
+
             # If message begins with ! and has three words could be a follow/unfollow term command
-            elif len(words) == 3:
+            elif words[1] == "!follow" and len(words) == 3:
                 term = words[2]
-                if words[1] == "!follow":
-                    print("follow term is", term)
-                    append_follow_list(user, term)
-                if words[1] == "!unfollow":
-                    print("unfollow term is", term)
+                append_follow_list(user, term, sock)
+            elif words[1] == "!unfollow" and len(words) == 3:
+                term = words[2]
+                pop_follow_list(user, term, sock)
+
+            # Attach command
+            elif words[1] == "!attach" and len(words) >= 3:
+                filename = words[2]
+                # splits file around the dot
+                filenameClean = filename.split(".")
+                # stores part before the dot in the term list
+                termList = [filenameClean[0]]
+                # iterate through the terms entered and store them in the list
+                for term in words[3:]:
+                    termList.append(term)
+
+            # if it does not fall under previous category then it's an invalid command
+            else:
+                message = "Invalid Command\n"
+                sock.send(message.encode())
 
         # Check for client disconnections.
         elif words[0] == 'DISCONNECT':
@@ -156,9 +222,13 @@ def read_message(sock, mask):
             for reg in client_list:
                 if reg[0] == user:
                     continue
-                client_sock = reg[1]
-                forwarded_message = f'{message}\n'
-                client_sock.send(forwarded_message.encode())
+                else:
+                    currentUsername = reg[0]
+                    userFollowList = follow_list[currentUsername]
+                    if atUser in userFollowList or followedMessage(message, userFollowList):
+                        client_sock = reg[1]
+                        forwarded_message = f'{message}\n'
+                        client_sock.send(forwarded_message.encode())
 
 
 # Function to accept and set up clients.
@@ -183,8 +253,14 @@ def accept_client(sock, mask):
 
     else:
         user = message_parts[1]
+        if user == "all":
+            print('Error:  Invalid registration message.')
+            print('Connection closing ...')
+            response = '400 Invalid registration\n'
+            conn.send(response.encode())
+            conn.close()
 
-        if (client_search(user) == None):
+        elif (client_search(user) == None):
             client_add(user, conn)
             print(f'Connection to client established, waiting to receive messages from user \'{user}\'...')
             response = '200 Registration succesful\n'
@@ -222,7 +298,7 @@ def main():
 
     # Keep the server running forever, waiting for connections or messages.
 
-    while (True):
+    while True:
         events = sel.select()
         for key, mask in events:
             callback = key.data
