@@ -72,7 +72,7 @@ def client_add(user, conn):
     registration = (user, conn)
     client_list.append(registration)
     insert = f'@{user}'
-    follow_list[user] = [insert]
+    follow_list[user] = [insert, "@all"]
 
 
 # Append term to follow list
@@ -99,11 +99,15 @@ def append_follow_list(user, term, sock):
 # Remove term from follow list
 def pop_follow_list(user, term, sock):
     if term in follow_list[user]:
-        follow_list[user].remove(term)
-        message = f'No longer following {term}\n'
-        sock.send(message.encode())
+        if term != f'@{user}' and term != "@all":
+            follow_list[user].remove(term)
+            message = f'No longer following {term}\n'
+            sock.send(message.encode())
+        else:
+            message = f"The term {term} is required cannot be unfollowed\n"
+            sock.send(message.encode())
     else:
-        message = "Term does not exist and cannot be unfollowed\n"
+        message = f"The term {term} does not exist and cannot be unfollowed\n"
         sock.send(message.encode())
 
 
@@ -132,9 +136,7 @@ def followedMessage(message, userFollowList):
     message_parts = message.lower().strip("\n").split(" ")
     punctuation = "!@#$%^&*(){}[]_-+=~`:;'<>.,/?"
     for i in message_parts:
-        print(i)
         i = i.rstrip(punctuation)
-        print(i)
         if i in userFollowList or i == "@all":
             return True
 
@@ -158,7 +160,6 @@ def read_message(sock, mask):
     else:
         print(f'Received message from user {user}:  ' + message)
         words = message.split(' ')
-        print(words)
 
         if words[1].startswith('!', 0, 1):
 
@@ -168,7 +169,7 @@ def read_message(sock, mask):
                 sock.send(message.encode())
 
             # Exit
-            if words[1] == '!exit':
+            elif words[1] == '!exit':
                 print('Disconnecting user ' + user)
                 message = 'DISCONNECT CHAT/1.0\n'
                 sock.send(message.encode())
@@ -192,16 +193,20 @@ def read_message(sock, mask):
                 term = words[2]
                 pop_follow_list(user, term, sock)
 
-            # Attach command
-            elif words[1] == "!attach" and len(words) >= 3:
+            elif words[1] == "!attach" and len(words) >= 5:
+                lineLength = len(words)
                 filename = words[2]
+                fileSize = words[-1]
                 # splits file around the dot
-                filenameClean = filename.split(".")
+                filenameStrip = filename.split(".")
                 # stores part before the dot in the term list
-                termList = [filenameClean[0]]
+                termList = [filenameStrip[0]]
                 # iterate through the terms entered and store them in the list
-                for term in words[3:]:
+                for term in words[3:-1]:
                     termList.append(term)
+                sel.unregister(sock)
+                receiveFile(filename, fileSize, termList, sock)
+
 
             # if it does not fall under previous category then it's an invalid command
             else:
@@ -215,7 +220,7 @@ def read_message(sock, mask):
             sel.unregister(sock)
             sock.close()
 
-        # Send message to all users.  Send at most only once, and don't send to yourself. 
+        # Send message to all users that follow a relevant term
         # Need to re-add stripped newlines here.
 
         else:
@@ -229,6 +234,18 @@ def read_message(sock, mask):
                         client_sock = reg[1]
                         forwarded_message = f'{message}\n'
                         client_sock.send(forwarded_message.encode())
+
+
+def receiveFile(filename, fileSize, termList, sock):
+    serverFile = open(f"\serverFiles{filename}", "wb")
+    readCount = 0
+    while readCount <= int(fileSize):
+        data = sock.recv(1)
+        serverFile.write(data)
+    serverFile.close()
+    # message = "unregistered\n"
+    # sock.send(message.encode())
+    # sel.register(sock)
 
 
 # Function to accept and set up clients.

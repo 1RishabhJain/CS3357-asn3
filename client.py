@@ -67,9 +67,45 @@ def handle_message_from_server(sock, mask):
 
 def handle_keyboard_input(file, mask):
     line=sys.stdin.readline()
-    message = f'@{user}: {line}'
-    client_socket.send(message.encode())
-    do_prompt()
+    if isAttach(line):
+        attachFunction(line, client_socket)
+    else:
+        message = f'@{user}: {line}'
+        client_socket.send(message.encode())
+        do_prompt()
+
+def isAttach(line):
+    words = line.split(' ')
+    if words[0] == "!attach" and len(words) >= 3 and os.path.exists(words[1]):
+        return True
+    elif words[0] == "!attach":
+        print("Error with command")
+        return False
+
+def attachFunction(line, sock):
+    words = line.split(' ')
+    line = line.rstrip("\n")
+    fileName = words[1]
+    fileOpen = open(fileName, "rb")
+    fileSize = os.path.getsize(fileName)
+    message = "%s: %s %d\n" % (user, line, fileSize)
+    # Send server message with username, inputted !attach command and the filesize
+    sock.send(message.encode())
+    sel.unregister(sock)
+    sendFile(fileSize, fileOpen, message, sock)
+
+def sendFile(fileSize, fileOpen, message, sock):
+    readCount = 0
+    data = fileOpen.read(1)
+    while readCount <= fileSize:
+        sock.send(data)
+        data = fileOpen.read(1)
+    fileOpen.close()
+    print(message)
+    # sel.register(sock)
+    # data = fileOpen.read()
+
+
 
 # Our main function.
 
