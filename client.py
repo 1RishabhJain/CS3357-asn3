@@ -59,6 +59,9 @@ def handle_message_from_server(sock, mask):
     if words[0] == 'DISCONNECT':
         print('Disconnected from server ... exiting!')
         sys.exit(0)
+    if words[0] == "!FileTransfer":
+        print("File Transferred Successfully")
+        do_prompt()
     else:
         print(message)
         do_prompt()
@@ -86,24 +89,26 @@ def attachFunction(line, sock):
     words = line.split(' ')
     line = line.rstrip("\n")
     fileName = words[1]
-    fileOpen = open(fileName, "rb")
+    outgoingFile = open(fileName, "rb")
     fileSize = os.path.getsize(fileName)
     message = "%s: %s %d\n" % (user, line, fileSize)
     # Send server message with username, inputted !attach command and the filesize
     sock.send(message.encode())
     sel.unregister(sock)
-    sendFile(fileSize, fileOpen, message, sock)
+    sendFile(fileSize, outgoingFile, message, sock)
 
-def sendFile(fileSize, fileOpen, message, sock):
-    readCount = 0
-    data = fileOpen.read(1)
-    while readCount <= fileSize:
+def sendFile(fileSize, outgoingFile, message, sock):
+    data = outgoingFile.read(1)
+    while data:
+        print("Sending...")
         sock.send(data)
-        data = fileOpen.read(1)
-    fileOpen.close()
-    print(message)
-    # sel.register(sock)
-    # data = fileOpen.read()
+        data = outgoingFile.read(1)
+    #sock.send("!FileTransfer\n".encode())
+    outgoingFile.close()
+    #sock.send(b"DONE")
+    print("Done Sending")
+
+    #sel.register(sock, selectors.EVENT_READ, handle_message_from_server)
 
 
 

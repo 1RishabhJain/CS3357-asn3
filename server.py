@@ -163,6 +163,10 @@ def read_message(sock, mask):
 
         if words[1].startswith('!', 0, 1):
 
+            if words[1] == "!FileTransfer":
+                print("File Transferred Successfully")
+                sock.send("!FileTransfer\n".encode())
+
             # List
             if words[1] == '!list':
                 message = client_name() + '\n'
@@ -194,18 +198,8 @@ def read_message(sock, mask):
                 pop_follow_list(user, term, sock)
 
             elif words[1] == "!attach" and len(words) >= 5:
-                lineLength = len(words)
-                filename = words[2]
-                fileSize = words[-1]
-                # splits file around the dot
-                filenameStrip = filename.split(".")
-                # stores part before the dot in the term list
-                termList = [filenameStrip[0]]
-                # iterate through the terms entered and store them in the list
-                for term in words[3:-1]:
-                    termList.append(term)
                 sel.unregister(sock)
-                receiveFile(filename, fileSize, termList, sock)
+                receiveFile(words, sock)
 
 
             # if it does not fall under previous category then it's an invalid command
@@ -236,16 +230,33 @@ def read_message(sock, mask):
                         client_sock.send(forwarded_message.encode())
 
 
-def receiveFile(filename, fileSize, termList, sock):
-    serverFile = open(f"\serverFiles{filename}", "wb")
-    readCount = 0
-    while readCount <= int(fileSize):
+def receiveFile(words, sock):
+    lineLength = len(words)
+    filename = words[2]
+    fileSize = words[-1]
+    # splits file around the dot
+    filenameStrip = filename.split(".")
+    # stores part before the dot in the term list
+    termList = [filenameStrip[0]]
+    # iterate through the terms entered and store them in the list
+    for term in words[3:-1]:
+        termList.append(term)
+
+    folder = "/serverFiles"
+    filePath = os.path.join(folder, filename)
+    print(filePath)
+    incomingFile = open(f"3{filename}", "wb")
+    count = 1
+    while count < int(fileSize):
+        print("Receiving...")
         data = sock.recv(1)
-        serverFile.write(data)
-    serverFile.close()
-    # message = "unregistered\n"
-    # sock.send(message.encode())
-    # sel.register(sock)
+        incomingFile.write(data)
+        incomingFile.flush()
+        count = count + 1
+    incomingFile.close()
+    print("Done Receiving")
+    #sel.register(sock, selectors.EVENT_READ, read_message)
+
 
 
 # Function to accept and set up clients.
