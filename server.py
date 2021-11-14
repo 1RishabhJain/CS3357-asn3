@@ -78,22 +78,26 @@ def client_add(user, conn):
 
 # Append term to follow list
 def append_follow_list(user, term, sock):
-    # if term starts with @ it could be a user
-    if term.startswith('@', 0, 1):
-        newTerm = term.lstrip("@")
-        # if it matches
-        if client_search(newTerm):
+    if term not in follow_list[user]:
+        # if term starts with @ it could be a user
+        if term.startswith('@', 0, 1):
+            newTerm = term.lstrip("@")
+            # if it matches
+            if client_search(newTerm):
+                follow_list[user].append(term)
+                message = f'Now following {term}\n'
+                sock.send(message.encode())
+            # does not match, send message and dont add term
+            else:
+                message = "User does not exist and cannot be followed\n"
+                sock.send(message.encode())
+        # term does not start with @, so add regardless
+        else:
             follow_list[user].append(term)
             message = f'Now following {term}\n'
             sock.send(message.encode())
-        # does not match, send message and dont add term
-        else:
-            message = "User does not exist and cannot be followed\n"
-            sock.send(message.encode())
-    # term does not start with @, so add regardless
     else:
-        follow_list[user].append(term)
-        message = f'Now following {term}\n'
+        message = f"Term {term} is already in follow list\n"
         sock.send(message.encode())
 
 
@@ -148,6 +152,7 @@ def read_message(sock, mask):
     message = get_line_from_socket(sock)
     user = client_search_by_socket(sock)
     atUser = f'@{user}'
+    words = message.split(' ')
 
     # Does this indicate a closed connection?
 
@@ -156,109 +161,161 @@ def read_message(sock, mask):
         sel.unregister(sock)
         sock.close()
 
-    elif "!FileTransfer" in message:
-        print("File Transferred Successfully")
-        sock.send("!FileTransfer\n".encode())
+    # Check for client disconnections.
+    elif words[0] == 'DISCONNECT':
+        print('Disconnecting user ' + user)
+        client_remove(user)
+        sel.unregister(sock)
+        sock.close()
 
-    # Receive the message.  
+    # Check for command messages (starting with "!")
+    elif words[1].startswith('!', 0, 1):
+        # List
+        if words[1] == '!list':
+            message = client_name() + '\n'
+            sock.send(message.encode())
 
-    else:
-        print(f'Received message from user {user}:  ' + message)
-        words = message.split(' ')
-        print(message)
-        if words[1].startswith('!', 0, 1):
-            # List
-            if words[1] == '!list':
-                message = client_name() + '\n'
-                sock.send(message.encode())
-
-            # Exit
-            elif words[1] == '!exit':
-                print('Disconnecting user ' + user)
-                message = 'DISCONNECT CHAT/1.0\n'
-                sock.send(message.encode())
-                client_remove(user)
-                sel.unregister(sock)
-                sock.close()
-
-            # Follow command
-            elif words[1] == "!follow?":
-                user_list = []
-                for item in follow_list[user]:
-                    user_list.append(item)
-                message = (', '.join(user_list)) + '\n'
-                sock.send(message.encode())
-
-            # If message begins with ! and has three words could be a follow/unfollow term command
-            elif words[1] == "!follow" and len(words) == 3:
-                term = words[2]
-                append_follow_list(user, term, sock)
-            elif words[1] == "!unfollow" and len(words) == 3:
-                term = words[2]
-                pop_follow_list(user, term, sock)
-
-            elif words[1] == "!attach" and len(words) >= 5:
-                sel.unregister(sock)
-                receiveFile(words, sock)
-
-
-            # if it does not fall under previous category then it's an invalid command
-            else:
-                message = "Invalid Command\n"
-                sock.send(message.encode())
-
-        # Check for client disconnections.
-        elif words[0] == 'DISCONNECT':
+        # Exit
+        elif words[1] == '!exit':
             print('Disconnecting user ' + user)
+            message = 'DISCONNECT CHAT/1.0\n'
+            sock.send(message.encode())
             client_remove(user)
             sel.unregister(sock)
             sock.close()
 
+        # Follow command
+        elif words[1] == "!follow?":
+            user_list = []
+            for item in follow_list[user]:
+                user_list.append(item)
+            message = (', '.join(user_list)) + '\n'
+            sock.send(message.encode())
+
+        # If message begins with ! and has three words could be a follow/unfollow term command
+        elif words[1] == "!follow" and len(words) == 3:
+            term = words[2]
+            append_follow_list(user, term, sock)
+        elif words[1] == "!unfollow" and len(words) == 3:
+            term = words[2]
+            pop_follow_list(user, term, sock)
+
+        elif words[1] == "!attach" and len(words) >= 3:
+            sel.unregister(sock)
+            receiveFile(words, sock)
+
+        # if it does not fall under previous category then it's an invalid command
+        elif words[1] == "!attach" or words[1] == "!unfollow" or words[1] == "!follow":
+            message = "Invalid Command\n"
+            sock.send(message.encode())
+
+    # If it is just a regular message then print it out on the server
+    else:
+        print(f'Received message from user {user}:  ' + message)
         # Send message to all users that follow a relevant term
         # Need to re-add stripped newlines here.
-
-        else:
-            for reg in client_list:
-                if reg[0] == user:
-                    continue
-                else:
-                    currentUsername = reg[0]
-                    userFollowList = follow_list[currentUsername]
-                    if atUser in userFollowList or followedMessage(message, userFollowList):
-                        client_sock = reg[1]
-                        forwarded_message = f'{message}\n'
-                        client_sock.send(forwarded_message.encode())
+        for reg in client_list:
+            if reg[0] == user:
+                continue
+            else:
+                currentUsername = reg[0]
+                userFollowList = follow_list[currentUsername]
+                if atUser in userFollowList or followedMessage(message, userFollowList):
+                    client_sock = reg[1]
+                    forwarded_message = f'{message}\n'
+                    client_sock.send(forwarded_message.encode())
 
 
 def receiveFile(words, sock):
-    lineLength = len(words)
     filename = words[2]
-    fileSize = words[-1]
+    fileSize = int(words[-1])
+    # setting up the folders to download the file to
     folder = "receivedFiles/server/"
     os.makedirs(folder, exist_ok=True)
     path = f"receivedFiles/server/{filename}"
     incomingFile = open(path, 'wb')
-    print("Receiving...")
-    data = sock.recv(int(fileSize))
-    print(data)
-    incomingFile.write(data)
-    incomingFile.flush()
-    print("Done Receiving.")
+    received = False
+    remainingData = fileSize
+    while not received:
+        if remainingData <= 1024:
+            receiveAmount = remainingData
+            remainingData = 0
+            received = True
+        else:
+            receiveAmount = 1024
+            remainingData = remainingData - 1024
+        data = sock.recv(receiveAmount)
+        incomingFile.write(data)
+        incomingFile.flush()
     incomingFile.close()
-    sel.register(sock, selectors.EVENT_READ, read_message)
+    sock.send("!Done".encode())
+    # Calls function to send the file out to other clients
+    clientsToSend(words, sock)
 
-    sendFile(words, sock)
-
-def sendFile(words, sock):
+# Function that will send the file to other clients
+def clientsToSend(words, sock):
+    user = client_search_by_socket(sock)
+    atUser = f'@{user}'
     filename = words[2]
     fileSize = words[-1]
     # splits file around the dot
     filenameStrip = filename.split(".")
     # stores part before the dot in the term list
-    termList = [filenameStrip[0]]
+    termList = [atUser]
     # iterate through the terms entered and store them in the list
     for term in words[3:-1]:
         termList.append(term)
+    # At least one client has been sent the file
+    matchFound = False
+    # Send message to clients who follow the terms related to the file
+    for reg in client_list:
+        if reg[0] == user:
+            continue
+        else:
+            currentUsername = reg[0]
+            if bool(set(follow_list[currentUsername]).intersection(termList)):
+                matchFound = True
+                client_sock = reg[1]
+                fileMessage = f"Incoming file: {filename}\n"
+                client_sock.send(fileMessage.encode())
+                fileMessage = f"Origin: {user}\n"
+                client_sock.send(fileMessage.encode())
+                fileMessage = f"Content-length: {fileSize}\n"
+                client_sock.send(fileMessage.encode())
+                client_sock.send(f"!FileTransfer {filename} fromServer {fileSize}\n".encode())
+                sendFile(client_sock, filename, fileSize, sock)
+                sel.register(client_sock, selectors.EVENT_READ, read_message)
+    # Will register the original sender of the file
+    sel.register(sock, selectors.EVENT_READ, read_message)
+    sock.send(f"!FileTransfer {filename} fromClient\n".encode())
+
+
+# helper function to the file sending
+def sendFile(client_sock, filename, fileSize, sock):
+    sel.unregister(client_sock)
+    outgoingFile = open(f"receivedFiles/server/{filename}", "rb")
+    sent = False
+    remainingData = int(fileSize)
+    while not sent:
+        if remainingData <= 1024:
+            sendAmount = remainingData
+            remainingData = 0
+            sent = True
+        else:
+            sendAmount = 1024
+            remainingData = remainingData - 1024
+        data = outgoingFile.read(sendAmount)
+        client_sock.send(data)
+    outgoingFile.close()
+    waiting = True
+    while waiting:
+        try:
+            wait = sock.recv(1024).decode()
+            if wait == "!Done":
+                waiting = False
+            break
+        except BlockingIOError as e:
+            waiting = True
 
 # Function to accept and set up clients.
 

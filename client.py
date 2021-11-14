@@ -55,13 +55,17 @@ def get_line_from_socket(sock):
 def handle_message_from_server(sock, mask):
     message=get_line_from_socket(sock)
     words=message.split(' ')
-    print(message)
+    # print(message)
     if words[0] == 'DISCONNECT':
         print('Disconnected from server ... exiting!')
         sys.exit(0)
-    if message == "!FileTransfer":
-        print("File Transferred Successfully")
-        do_prompt()
+    if words[0] == "!FileTransfer":
+        # File transfer from client to server
+        if words[2] == "fromClient":
+            print(f"Attachment {words[1]} attached and distributed")
+            do_prompt()
+        elif words[2] == "fromServer":
+            receiveFile(sock, words[1], words[3])
     else:
         print(message)
         do_prompt()
@@ -70,8 +74,11 @@ def handle_message_from_server(sock, mask):
 
 def handle_keyboard_input(file, mask):
     line=sys.stdin.readline()
-    if isAttach(line):
+    if isAttach(line) == 0:
         attachFunction(line, client_socket)
+    elif isAttach(line) == 1:
+        print("A file with the name provided does not exist")
+        do_prompt()
     else:
         message = f'@{user}: {line}'
         client_socket.send(message.encode())
@@ -79,38 +86,68 @@ def handle_keyboard_input(file, mask):
 
 def isAttach(line):
     words = line.split(' ')
-    if words[0] == "!attach" and len(words) >= 3 and os.path.exists(words[1]):
-        return True
+    if words[0] == "!attach" and os.path.isfile(words[1].rstrip("\n")):
+        return 0
     elif words[0] == "!attach":
-        return False
+        return 1
 
 def attachFunction(line, sock):
     words = line.split(' ')
     line = line.rstrip("\n")
-    fileName = words[1]
+    fileName = words[1].rstrip("\n")
     outgoingFile = open(fileName, "rb")
     fileSize = os.path.getsize(fileName)
-    print("here")
     message = "%s: %s %d\n" % (user, line, fileSize)
     # Send server message with username, inputted !attach command and the filesize
     sock.send(message.encode())
-    print("here2")
-    sel.unregister(sock)
-    print("unregistered")
-    sendFile(fileSize, outgoingFile, message, sock)
+    sendFile(fileSize, fileName, outgoingFile, message, sock)
+    do_prompt()
 
-def sendFile(fileSize, outgoingFile, message, sock):
-    data = outgoingFile.read(fileSize)
-    print(data)
-    print("Sending...")
-    sock.send(data)
-    sock.send("!FileTransfer\n".encode())
+def sendFile(fileSize, fileName, outgoingFile, message, sock):
+    sent = False
+    remainingData = fileSize
+    while not sent:
+        if remainingData <= 1024:
+            sendAmount = remainingData
+            remainingData = 0
+            sent = True
+        else:
+            sendAmount = 1024
+        data = outgoingFile.read(sendAmount)
+        sock.send(data)
     outgoingFile.close()
-    print("Done Sending")
-    sel.register(sock, selectors.EVENT_READ, handle_message_from_server)
+    waiting = True
+    while waiting:
+        try:
+            wait = sock.recv(1024).decode()
+            if wait == "!Done":
+                waiting = False
+            break
+        except BlockingIOError as e:
+            # print("waiting")
+            waiting = True
 
-
-
+def receiveFile(sock, filename, fileSize):
+    fileSize = int(fileSize)
+    folder = f"receivedFiles/clients/{user}"
+    os.makedirs(folder, exist_ok=True)
+    path = f"receivedFiles/clients/{user}/{filename}"
+    incomingFile = open(path, 'wb')
+    received = False
+    remainingData = fileSize
+    while not received:
+        if remainingData <= 1024:
+            receiveAmount = remainingData
+            remainingData = 0
+            received = True
+        else:
+            receiveAmount = 1024
+            remainingData = remainingData - 1024
+        data = sock.recv(receiveAmount)
+        incomingFile.write(data)
+        incomingFile.flush()
+    incomingFile.close()
+    sock.send("!Done".encode())
 # Our main function.
 
 def main():
